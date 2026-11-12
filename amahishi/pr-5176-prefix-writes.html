@@ -182,6 +182,7 @@ The figure follows one real inventory from the PR's test fixture: calls <code>c0
 
   <text class="note" x="12" y="540">Values in rows 1–3 come from the PR's test fixture (_batch_worker_fixture, two calls). Row 4–5 thread roles are read from the code at 981376a.</text>
 </svg>
+<p class="cref">🔴 <a href="https://github.com/NVIDIA-NeMo/RL/pull/5176#discussion_r4555061105">review comment C5 — prefix_pipeline.py:363 (row 5)</a></p>
 
 <h2>Where the two paths meet, and what still differs</h2>
 
@@ -219,6 +220,8 @@ limits instead of three switches and two copied limits under <code>vllm_cfg</cod
 ahead of the writes, so fewer calls stay frozen (row 5), and to <b>move the writer process to its own PR</b>
 with repeated runs. Two CI items must be fixed first: the lint check is red, and the new tests are not marked to run in the Gym test lane.</p>
 </div>
+<p class="cref"><a href="https://github.com/NVIDIA-NeMo/RL/pull/5176#discussion_r4555060957">C1 — lint, recovery.py:872</a><a href="https://github.com/NVIDIA-NeMo/RL/pull/5176#discussion_r4555061017">C2 — tests in no CI lane</a><a href="https://github.com/NVIDIA-NeMo/RL/pull/5176#discussion_r4555061049">C3 — one config block</a><a href="https://github.com/NVIDIA-NeMo/RL/pull/5176#discussion_r4555061105">C5 — frozen calls</a><a href="https://github.com/NVIDIA-NeMo/RL/pull/5176#discussion_r4555061203">C8 — split the writer actor</a></p>
+<p class="sub" style="margin-top:6px">Review comment links work once the review is published.</p>
 
 </div>
 </body>
