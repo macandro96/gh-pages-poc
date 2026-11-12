@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NVIDIA-NeMo/RL #5176 — how a generation-prefix cut gets written, before and with the pipeline</title>
+<style>
+:root{--bg:#0d1117;--surface:#161b22;--surface2:#1c2128;--border:#30363d;--text:#e6edf3;--dim:#8b949e;
+  --accent:#58a6ff;--green:#3fb950;--red:#f85149;--orange:#d29922}
+:root[data-theme="light"]{--bg:#ffffff;--surface:#f6f8fa;--surface2:#eaeef2;--border:#d0d7de;--text:#1f2328;
+  --dim:#59636e;--accent:#0969da;--green:#1a7f37;--red:#cf222e;--orange:#9a6700}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+  font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+.wrap{max-width:980px;margin:0 auto;padding:28px 16px 70px}
+h1{font-size:22px;margin:0 0 8px;line-height:1.3}
+h2{font-size:18px;margin:30px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+code{background:var(--surface2);padding:1.5px 5px;border-radius:5px;font:13px ui-monospace,SFMono-Regular,Menlo,monospace}
+.sub{color:var(--dim);font-size:13.5px;margin:0 0 16px}
+#theme-toggle{position:fixed;top:14px;right:16px;z-index:200;background:var(--surface);
+  border:1px solid var(--border);color:var(--text);border-radius:20px;padding:6px 12px;
+  font:13px/1 ui-monospace,Menlo,monospace;cursor:pointer}
+.status{border:1px solid var(--border);border-radius:10px;background:var(--surface);padding:2px 16px 10px;margin:0 0 18px}
+.status dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:12px 0 0}
+.status dt{color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;padding-top:2px}
+.status dd{margin:0;font-size:14px}
+.verdict{font-weight:700}
+.verdict.open{color:var(--orange)}
+.bg{border-left:4px solid var(--dim);background:var(--surface);padding:8px 14px;margin:0 0 14px;font-size:14px}
+.tip{border-bottom:1px dotted var(--dim);cursor:help;position:relative;outline:none}
+.tip:hover::after,.tip:focus::after{content:attr(data-tip);position:absolute;left:0;top:1.7em;z-index:60;
+  width:max-content;max-width:min(340px,80vw);white-space:normal;background:var(--surface2);color:var(--text);
+  border:1px solid var(--border);border-radius:6px;padding:7px 10px;font:13px/1.45 -apple-system,sans-serif;
+  font-weight:400;box-shadow:0 4px 14px rgba(0,0,0,.3)}
+table{border-collapse:collapse;width:100%;font-size:13.5px;margin:10px 0}
+th,td{border:1px solid var(--border);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:var(--surface);font-weight:600}
+td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tw{overflow-x:auto}
+.hl{border-left:3px solid var(--accent);background:var(--surface);padding:12px 16px;margin:16px 0;border-radius:0 8px 8px 0}
+.cref{margin:6px 0 0;font-size:13px}
+.cref a{display:inline-block;padding:4px 10px;border:1px solid var(--border);border-radius:16px;background:var(--surface);
+  font:12.5px ui-monospace,Menlo,monospace;margin:2px 4px 2px 0}
+.cref a:hover{background:var(--surface2);text-decoration:none}
+svg{max-width:100%;height:auto;display:block;margin:14px 0}
+svg .box{fill:var(--surface);stroke:var(--border);stroke-width:1.3}
+svg .same{fill:var(--surface);stroke:var(--green);stroke-width:1.6}
+svg .diff{fill:var(--surface);stroke:var(--accent);stroke-width:1.6}
+svg .risk{fill:var(--surface);stroke:var(--red);stroke-width:1.8}
+svg .lbl{fill:var(--text);font:11.5px ui-monospace,Menlo,monospace}
+svg .lbl-b{fill:var(--text);font:bold 12.5px -apple-system,sans-serif}
+svg .note{fill:var(--dim);font:11px -apple-system,sans-serif}
+svg .hdr{fill:var(--accent);font:bold 13px -apple-system,sans-serif}
+svg .row{fill:var(--dim);font:bold 11.5px -apple-system,sans-serif}
+svg .red{fill:var(--red)}
+svg .grn{fill:var(--green)}
+svg .arw{stroke:var(--dim);stroke-width:1.3;fill:none}
+svg a text{text-decoration:underline;fill:var(--accent);font:11px ui-monospace,Menlo,monospace}
+</style>
+<script>(function(){try{if(localStorage.getItem('gh-pages-theme')==='light')
+  document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+</head>
+<body>
+<button id="theme-toggle" aria-label="Toggle light/dark theme">🌙 dark</button>
+<script>(function(){var r=document.documentElement,K='gh-pages-theme';
+  function lbl(){var b=document.getElementById('theme-toggle');if(b)b.textContent=r.getAttribute('data-theme')==='light'?'☀ light':'🌙 dark';}
+  function wire(){var b=document.getElementById('theme-toggle');if(!b)return;
+    b.onclick=function(){if(r.getAttribute('data-theme')==='light'){r.removeAttribute('data-theme');try{localStorage.setItem(K,'dark')}catch(e){}}
+      else{r.setAttribute('data-theme','light');try{localStorage.setItem(K,'light')}catch(e){}}lbl();};lbl();}
+  document.readyState!=='loading'?wire():document.addEventListener('DOMContentLoaded',wire);})();</script>
+<div class="wrap">
+
+<h1>How a generation-prefix cut gets written — today, and with this PR's pipeline and writer actor</h1>
+<p class="sub"><a href="https://github.com/NVIDIA-NeMo/RL/pull/5176">NVIDIA-NeMo/RL #5176</a>,
+stacked on <a href="https://github.com/NVIDIA-NeMo/RL/pull/4508">#4508</a>.
+Permalinks pin the PR head <code>981376a</code>; “today” means #4508's head <code>788133a</code>.</p>
+
+<div class="status">
+<dl>
+  <dt>Before</dt>
+  <dd>One thread does a whole cut: it freezes a batch of calls, encodes their rows one by one, writes them with the worker's own store client, waits, and only then starts the next batch.</dd>
+  <dt>This PR</dt>
+  <dd>Adds three opt-in pieces: a faster column encoder, a pipeline that prepares the next batch while one write runs (and merges batches from different cuts), and a CPU writer process that does the write.</dd>
+  <dt>Status</dt>
+  <dd><span class="verdict open">Proposed — off by default, not ready to merge.</span>
+  The review found CI lint red and the 78 new tests scheduled in no CI lane, and asks to reshape the config before merge.</dd>
+</dl>
+</div>
+
+<div class="bg"><b>Background.</b> When a rollout checkpoint is saved, Gym asks each vLLM engine for a
+<span class="tip" tabindex="0" data-tip="A snapshot of the tokens an unfinished model call has generated so far, so after a crash the call continues from there instead of starting over.">cut</span>
+of every unfinished model call it lists in an
+<span class="tip" tabindex="0" data-tip="Gym's frozen list of the model calls to cut for one checkpoint (Gym sends one per checkpoint per engine).">inventory</span>.
+Each call's new tokens become one row in
+<span class="tip" tabindex="0" data-tip="TransferQueue: the in-cluster store the trainer and generation workers share. Rows are written with put_samples and read back on restore.">TQ</span>.
+A call is <span class="tip" tabindex="0" data-tip="While frozen, the call cannot finish or be aborted; this keeps the saved row equal to what the call really has. It is released (sealed or rolled back) after the write answers.">frozen</span>
+until its row's write is confirmed, and only then does Gym get a receipt. Dotted words have a short explanation: hover or tap them.</div>
+
+<p>Both paths run the same cut code: <a href="https://github.com/NVIDIA-NeMo/RL/blob/981376a3d01e1c4fc1c3313879d0c34bc3856b20/nemo_rl/models/generation/prefix_recovery/recovery.py#L800"><code>_cut_batched</code></a>
+is now a generator that hands each batch out as a <code>PrefixWrite</code> and waits for its keys
+(<a href="https://github.com/NVIDIA-NeMo/RL/blob/981376a3d01e1c4fc1c3313879d0c34bc3856b20/nemo_rl/models/generation/prefix_recovery/recovery.py#L925">recovery.py:925</a>).
+With the pipeline off, <a href="https://github.com/NVIDIA-NeMo/RL/blob/981376a3d01e1c4fc1c3313879d0c34bc3856b20/nemo_rl/models/generation/prefix_recovery/recovery.py#L740"><code>checkpoint_cut</code></a>
+answers each one right away on the same thread. With it on,
+<a href="https://github.com/NVIDIA-NeMo/RL/blob/981376a3d01e1c4fc1c3313879d0c34bc3856b20/nemo_rl/models/generation/prefix_recovery/recovery.py#L358"><code>run_cut</code></a>
+gives the generator to <code>PrefixWritePipeline</code>, whose prepare thread steps it and whose single write thread does the writes.
+The figure follows one real inventory from the PR's test fixture: calls <code>c0</code> (3 new tokens) and <code>c1</code> (4).</p>
+
+<h2>Same cut, two ways to write it</h2>
+
+<svg viewBox="0 0 960 560" role="img" aria-label="Two lanes, today and this PR, for one inventory with two calls. They share the cut code and produce identical rows; they differ in which thread or process writes, and in how many calls stay frozen while writes queue.">
+  <text class="hdr" x="160" y="22">Today (#4508)</text>
+  <text class="hdr" x="566" y="22">This PR, all three pieces on</text>
+
+  <!-- legend -->
+  <rect class="same" x="160" y="34" width="14" height="10"/><text class="note" x="180" y="43">same in both</text>
+  <rect class="diff" x="270" y="34" width="14" height="10"/><text class="note" x="290" y="43">differs by design</text>
+  <rect class="risk" x="400" y="34" width="14" height="10"/><text class="note" x="420" y="43">raised in review</text>
+
+  <!-- row 1 -->
+  <text class="row" x="12" y="78">1 · Gym asks</text>
+  <rect class="same" x="160" y="58" width="786" height="34" rx="6"/>
+  <text class="lbl" x="172" y="80">inventory "checkpoint-1": calls [c0, c1]   →  run_cut()</text>
+  <path class="arw" d="M553 92 V108"/>
+
+  <!-- row 2 -->
+  <text class="row" x="12" y="130">2 · freeze, read</text>
+  <text class="row" x="12" y="145">    new tokens</text>
+  <rect class="same" x="160" y="110" width="786" height="48" rx="6"/>
+  <text class="lbl" x="172" y="130">c0: 3 tokens [10, 20, 21]    c1: 4 tokens [10, 20, 21, 22]</text>
+  <a href="https://github.com/NVIDIA-NeMo/RL/blob/981376a3d01e1c4fc1c3313879d0c34bc3856b20/nemo_rl/models/generation/prefix_recovery/recovery.py#L800" target="_blank" rel="noopener"><text x="172" y="148">_cut_batched :800 — one generator drives both lanes</text></a>
+  <path class="arw" d="M350 158 V174"/><path class="arw" d="M756 158 V174"/>
+
+  <!-- row 3 -->
+  <text class="row" x="12" y="196">3 · encode</text>
+  <rect class="diff" x="160" y="176" width="384" height="52" rx="6"/>
+  <text class="lbl" x="172" y="196">one TensorDict per row, then stack</text>
+  <a href="https://github.com/NVIDIA-NeMo/RL/blob/981376a3d01e1c4fc1c3313879d0c34bc3856b20/nemo_rl/data_plane/tq_token_sink.py#L851" target="_blank" rel="noopener"><text x="172" y="216">_encode_record ×2 :851</text></a>
+  <rect class="diff" x="562" y="176" width="384" height="52" rx="6"/>
+  <text class="lbl" x="574" y="196">columns built in NumPy, no row tensors</text>
+  <a href="https://github.com/NVIDIA-NeMo/RL/blob/981376a3d01e1c4fc1c3313879d0c34bc3856b20/nemo_rl/data_plane/direct_prefix_batch.py#L73" target="_blank" rel="noopener"><text x="574" y="216">encode_prefix_groups :73</text></a>
+  <rect class="same" x="160" y="236" width="786" height="34" rx="6"/>
+  <text class="lbl" x="172" y="257">same 24 columns, 624 B · token_ids_delta int64, row offsets [0, 3, 7]</text>
+  <a href="https://github.com/NVIDIA-NeMo/RL/blob/981376a3d01e1c4fc1c3313879d0c34bc3856b20/tests/unit/data_plane/test_prefix_pipeline.py#L53" target="_blank" rel="noopener"><text x="760" y="257">parity test :53</text></a>
+  <path class="arw" d="M350 270 V286"/><path class="arw" d="M756 270 V286"/>
+
+  <!-- row 4 -->
+  <text class="row" x="12" y="308">4 · who writes</text>
+  <rect class="diff" x="160" y="288" width="384" height="78" rx="6"/>
+  <text class="lbl" x="172" y="308">the cut's own thread writes</text>
+  <text class="lbl" x="172" y="324">with the worker's TQ client, then waits</text>
+  <a href="https://github.com/NVIDIA-NeMo/RL/blob/981376a3d01e1c4fc1c3313879d0c34bc3856b20/nemo_rl/data_plane/tq_token_sink.py#L875" target="_blank" rel="noopener"><text x="172" y="344">store.put_many :875</text></a>
+  <rect class="diff" x="562" y="288" width="384" height="78" rx="6"/>
+  <text class="lbl" x="574" y="308">write thread merges rows from several cuts</text>
+  <text class="lbl" x="574" y="324">→ 24 byte buffers (624 B) → CPU writer process</text>
+  <a href="https://github.com/NVIDIA-NeMo/RL/blob/981376a3d01e1c4fc1c3313879d0c34bc3856b20/nemo_rl/data_plane/prefix_pipeline.py#L271" target="_blank" rel="noopener"><text x="574" y="344">_collect :271</text></a>
+  <a href="https://github.com/NVIDIA-NeMo/RL/blob/981376a3d01e1c4fc1c3313879d0c34bc3856b20/nemo_rl/data_plane/prefix_writer_actor.py#L95" target="_blank" rel="noopener"><text x="672" y="344">pack_columns :95</text></a>
+  <a href="https://github.com/NVIDIA-NeMo/RL/blob/981376a3d01e1c4fc1c3313879d0c34bc3856b20/nemo_rl/data_plane/prefix_writer_actor.py#L225" target="_blank" rel="noopener"><text x="790" y="344">actor put :225</text></a>
+  <text class="note" x="574" y="360">the writer is pinned to the engine's node</text>
+  <path class="arw" d="M350 366 V382"/><path class="arw" d="M756 366 V382"/>
+
+  <!-- row 5 -->
+  <text class="row" x="12" y="404">5 · while the</text>
+  <text class="row" x="12" y="419">    write runs</text>
+  <rect class="same" x="160" y="384" width="384" height="62" rx="6"/>
+  <text class="lbl" x="172" y="404">nothing else is prepared;</text>
+  <text class="lbl" x="172" y="420">only this batch's calls are frozen</text>
+  <text class="note" x="172" y="438">at most one batch frozen at a time</text>
+  <rect class="risk" x="562" y="384" width="384" height="62" rx="6"/>
+  <text class="lbl" x="574" y="404">prepare thread freezes the next cuts' calls</text>
+  <text class="lbl red" x="574" y="420">they stay frozen until every write ahead drains</text>
+  <a href="https://github.com/NVIDIA-NeMo/RL/blob/981376a3d01e1c4fc1c3313879d0c34bc3856b20/nemo_rl/data_plane/prefix_pipeline.py#L363" target="_blank" rel="noopener"><text x="574" y="438">can_prepare :363 — capped by bytes only</text></a>
+  <path class="arw" d="M553 446 V462"/>
+
+  <!-- row 6 -->
+  <text class="row" x="12" y="484">6 · after TQ</text>
+  <text class="row" x="12" y="499">    confirms</text>
+  <rect class="same" x="160" y="464" width="786" height="48" rx="6"/>
+  <text class="lbl" x="172" y="484">keys come back → seal both calls → receipt to Gym</text>
+  <text class="note" x="172" y="502">No receipt before the write is confirmed, in either lane. A failed merged write retries each cut's own batch.</text>
+
+  <text class="note" x="12" y="540">Values in rows 1–3 come from the PR's test fixture (_batch_worker_fixture, two calls). Row 4–5 thread roles are read from the code at 981376a.</text>
+</svg>
+
+<h2>Where the two paths meet, and what still differs</h2>
+
+<p>They meet twice. Before the write, both lanes run the same generator
+(steps 1–2). After encoding, both produce the same bytes (step 3); the PR's
+parity test checks this. They also end at the same place: the same staging rows in TQ, sealed
+only after the write is confirmed (step 6). What differs is only who does the work while the write runs:</p>
+
+<div class="tw"><table>
+<tr><th></th><th>Today</th><th>This PR (all on)</th></tr>
+<tr><td>Encoding</td><td>per-row tensors, then stacked</td><td>whole columns in NumPy</td></tr>
+<tr><td>Who waits on the write</td><td>the cut's own thread</td><td>one write thread; the cut thread keeps preparing</td></tr>
+<tr><td>Who talks to TQ</td><td>the vLLM worker process</td><td>a separate 1-CPU process on the same node</td></tr>
+<tr><td>Rows per write</td><td>one cut's batch</td><td>batches merged across cuts, within row, token and byte limits</td></tr>
+<tr><td>Calls frozen at once</td><td>≤ one batch</td><td>up to every admitted cut's batch, until the queue drains</td></tr>
+</table></div>
+
+<p>The PR's benchmark (4 nodes, router replay, 630 outstanding calls per engine; prefix cut + TQ save time, single runs):</p>
+<div class="tw"><table>
+<tr><th>Write path</th><th>Snapshot 1</th><th>Snapshot 2</th></tr>
+<tr><td>Today (#4508)</td><td class="n">52.44 s</td><td class="n">107.60 s</td></tr>
+<tr><td>+ column encoder + pipeline, worker's own client</td><td class="n">31.65 s</td><td class="n">81.20 s</td></tr>
+<tr><td>+ writer process + NumPy packing</td><td class="n">25.24 s</td><td class="n">72.27 s</td></tr>
+</table></div>
+
+<h2>Why keep both, and what the review asks</h2>
+
+<div class="hl">
+<p style="margin:0 0 8px"><b>Today's path stays the default</b>: it holds at most one batch of calls frozen and uses no extra process.
+The pipeline is worth its cost: the encoder plus pipeline cut the save time by about a third, far more than run-to-run noise.
+The writer process adds one more step, from a single run bundled with a packing change the PR itself says did not help on its own.</p>
+<p style="margin:0">So the review asks to <b>land the encoder and pipeline first</b>, with one config block next to the
+existing <a href="https://github.com/NVIDIA-NeMo/RL/blob/981376a3d01e1c4fc1c3313879d0c34bc3856b20/nemo_rl/algorithms/single_controller_utils/config.py#L770"><code>rollout_recovery.generation_prefix_batch_*</code></a>
+limits instead of three switches and two copied limits under <code>vllm_cfg</code>. It also asks to cap how far preparation runs
+ahead of the writes, so fewer calls stay frozen (row 5), and to <b>move the writer process to its own PR</b>
+with repeated runs. Two CI items must be fixed first: the lint check is red, and the new tests are not marked to run in the Gym test lane.</p>
+</div>
+
+</div>
+</body>
+</html>
