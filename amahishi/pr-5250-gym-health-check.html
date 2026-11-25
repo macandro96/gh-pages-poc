@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NVIDIA-NeMo/RL #5250 — why the stall watchdog never asked NeMo-Gym, and how it asks every actor now</title>
+<style>
+:root{--bg:#0d1117;--surface:#161b22;--surface2:#1c2128;--border:#30363d;--text:#e6edf3;--dim:#8b949e;
+  --accent:#58a6ff;--green:#3fb950;--red:#f85149;--orange:#d29922}
+:root[data-theme="light"]{--bg:#ffffff;--surface:#f6f8fa;--surface2:#eaeef2;--border:#d0d7de;--text:#1f2328;
+  --dim:#59636e;--accent:#0969da;--green:#1a7f37;--red:#cf222e;--orange:#9a6700}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+  font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+.wrap{max-width:980px;margin:0 auto;padding:28px 16px 70px}
+h1{font-size:22px;margin:0 0 8px;line-height:1.3}
+h2{font-size:18px;margin:30px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+code{background:var(--surface2);padding:1.5px 5px;border-radius:5px;font:13px ui-monospace,SFMono-Regular,Menlo,monospace}
+.sub{color:var(--dim);font-size:13.5px;margin:0 0 16px}
+#theme-toggle{position:fixed;top:14px;right:16px;z-index:200;background:var(--surface);
+  border:1px solid var(--border);color:var(--text);border-radius:20px;padding:6px 12px;
+  font:13px/1 ui-monospace,Menlo,monospace;cursor:pointer}
+.status{border:1px solid var(--border);border-radius:10px;background:var(--surface);padding:2px 16px 10px;margin:0 0 18px}
+.status dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:12px 0 0}
+.status dt{color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;padding-top:2px}
+.status dd{margin:0;font-size:14px}
+.verdict{font-weight:700}
+.verdict.good{color:var(--green)}
+.bg{border-left:4px solid var(--dim);background:var(--surface);padding:8px 14px;margin:0 0 14px;font-size:14px}
+.tip{border-bottom:1px dotted var(--dim);cursor:help;position:relative;outline:none}
+.tip:hover::after,.tip:focus::after{content:attr(data-tip);position:absolute;left:0;top:1.7em;z-index:60;
+  width:max-content;max-width:min(340px,80vw);white-space:normal;background:var(--surface2);color:var(--text);
+  border:1px solid var(--border);border-radius:6px;padding:7px 10px;font:13px/1.45 -apple-system,sans-serif;
+  font-weight:400;box-shadow:0 4px 14px rgba(0,0,0,.3)}
+.hl{border-left:3px solid var(--accent);background:var(--surface);padding:12px 16px;margin:16px 0;border-radius:0 8px 8px 0}
+.where{border-left:4px solid var(--accent);background:var(--surface);padding:6px 12px;margin:6px 0 10px;font-size:14px}
+.diff{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--surface);
+  border:1px solid var(--border);border-radius:8px;padding:12px;overflow-x:auto;white-space:pre;margin:10px 0}
+.diff .add{color:var(--green)}
+.diff .del{color:var(--red)}
+.diff .hunk{color:var(--accent)}
+.cref{margin:6px 0 0;font-size:13px}
+.cref a{display:inline-block;padding:4px 10px;border:1px solid var(--border);border-radius:16px;background:var(--surface);
+  font:12.5px ui-monospace,Menlo,monospace;margin:2px 4px 2px 0}
+.cref a:hover{background:var(--surface2);text-decoration:none}
+ol.steps{padding-left:22px;margin:8px 0}
+ol.steps li{margin:3px 0}
+svg{max-width:100%;height:auto;display:block;margin:14px 0}
+svg .box{fill:var(--surface);stroke:var(--border);stroke-width:1.3}
+svg .ok{fill:var(--surface);stroke:var(--green);stroke-width:1.6}
+svg .bad{fill:var(--surface);stroke:var(--red);stroke-width:1.8}
+svg .lbl{fill:var(--text);font:11px ui-monospace,Menlo,monospace}
+svg .note{fill:var(--dim);font:11px -apple-system,sans-serif}
+svg .hdr{fill:var(--accent);font:bold 13px -apple-system,sans-serif}
+svg .row{fill:var(--dim);font:bold 11.5px -apple-system,sans-serif}
+svg .red{fill:var(--red)}
+svg .grn{fill:var(--green)}
+svg .arw{stroke:var(--dim);stroke-width:1.3;fill:none}
+svg a text{text-decoration:underline;fill:var(--accent);font:11px ui-monospace,Menlo,monospace}
+</style>
+<script>(function(){try{if(localStorage.getItem('gh-pages-theme')==='light')
+  document.documentElement.setAttribute('data-theme','light');}catch(e){}})();</script>
+</head>
+<body>
+<button id="theme-toggle" aria-label="Toggle light/dark theme">🌙 dark</button>
+<script>(function(){var r=document.documentElement,K='gh-pages-theme';
+  function lbl(){var b=document.getElementById('theme-toggle');if(b)b.textContent=r.getAttribute('data-theme')==='light'?'☀ light':'🌙 dark';}
+  function wire(){var b=document.getElementById('theme-toggle');if(!b)return;
+    b.onclick=function(){if(r.getAttribute('data-theme')==='light'){r.removeAttribute('data-theme');try{localStorage.setItem(K,'dark')}catch(e){}}
+      else{r.setAttribute('data-theme','light');try{localStorage.setItem(K,'light')}catch(e){}}lbl();};lbl();}
+  document.readyState!=='loading'?wire():document.addEventListener('DOMContentLoaded',wire);})();</script>
+<div class="wrap">
+
+<h1>Why the stall watchdog never asked NeMo-Gym whether its servers were alive — and how it asks every Gym actor now</h1>
+<p class="sub"><a href="https://github.com/NVIDIA-NeMo/RL/pull/5250">NVIDIA-NeMo/RL #5250</a>.
+Permalinks pin the PR head <code>4e57ebb</code>; removed code is linked at the base <code>e4af41d</code>.</p>
+
+<div class="status">
+<dl>
+  <dt>Before</dt>
+  <dd>The watchdog's health check skipped NeMo-Gym in every run. The Gym entry is a shard set, which has no
+  <code>health_check</code>, so no Gym actor was ever asked. A dead Gym server showed up, at best, as a rollout stall after
+  600 s.</dd>
+  <dt>This PR</dt>
+  <dd>Reads the Gym entry as a shard set and asks every Gym actor at the same time, each with its own time limit.
+  Each problem is one line that names the actor.</dd>
+  <dt>Status</dt>
+  <dd><span class="verdict good">Fixed by this PR.</span> No config key changes. CI ran the check against real Gym actors
+  with no false report.</dd>
+</dl>
+</div>
+
+<div class="bg"><b>Background.</b> NeMo-Gym runs its tool and environment servers as subprocesses inside Ray actors
+(<a href="https://github.com/NVIDIA-NeMo/RL/blob/4e57ebb9f57176a600a32535a3ce0348dda8c9db/nemo_rl/environments/nemo_gym.py#L1219"><code>NemoGym</code></a>).
+A job can split the servers into
+<span class="tip" tabindex="0" data-tip="A group of Gym servers placed on its own node. A shard can also run several identical copies, called replicas.">shards</span>,
+each with one or more replicas, and
+<a href="https://github.com/NVIDIA-NeMo/RL/blob/4e57ebb9f57176a600a32535a3ce0348dda8c9db/nemo_rl/environments/nemo_gym.py#L3310"><code>NemoGymShardSet</code></a>
+holds all of those actors. A job without shards is a set with one actor.
+The single controller's
+<span class="tip" tabindex="0" data-tip="A loop in the single controller that wakes every async_rl.stall_watchdog.interval_s (30 s by default), logs counters, and looks for a stuck run.">stall watchdog</span>
+wakes every 30 s and, when <code>gym_subprocess_check</code> is on (the default), asks the environments whether they are healthy.
+Dotted words have a short explanation: hover or tap them.</div>
+
+<p>Setup stores the Gym actors under the key <code>"nemo_gym"</code> as a <code>NemoGymShardSet</code>, for sharded and unsharded jobs alike
+(<a href="https://github.com/NVIDIA-NeMo/RL/blob/4e57ebb9f57176a600a32535a3ce0348dda8c9db/nemo_rl/algorithms/single_controller_utils/setup.py#L2445">setup.py:2445</a>).
+The old check looked for a <code>health_check</code> method on each entry and skipped any entry without one
+(<a href="https://github.com/NVIDIA-NeMo/RL/blob/e4af41d82f5a99d2e8bd9b263a02f12576fea070/nemo_rl/algorithms/single_controller.py#L4524-L4526">base :4524</a>).
+The method lives on each <code>NemoGym</code> actor, not on the set that holds them, so the Gym entry was always skipped.
+The figure follows one job: shard <code>tools</code> with two replicas, shards <code>search</code> and <code>code</code> with one each.
+One <code>tools</code> replica has stopped answering, and the <code>search</code> server process has died.</p>
+
+<h2>What one watchdog tick asks, before and after</h2>
+
+<svg viewBox="0 0 960 520" role="img" aria-label="Two lanes for one job with four Gym actors. Before: the check finds no health_check on the shard set, skips it, and reports nothing. After: it asks all four actors at once and reports the silent replica and the dead search server, one line each.">
+  <text class="hdr" x="160" y="22">Before (main)</text>
+  <text class="hdr" x="566" y="22">This PR</text>
+  <rect class="ok" x="660" y="10" width="14" height="10"/><text class="note" x="680" y="19">works</text>
+  <rect class="bad" x="730" y="10" width="14" height="10"/><text class="note" x="750" y="19">the bug</text>
+
+  <!-- row 0: shared input -->
+  <text class="row" x="12" y="54">input</text>
+  <rect class="box" x="160" y="34" width="786" height="48" rx="6"/>
+  <text class="lbl" x="172" y="54">env_handles = {"nemo_gym": NemoGymShardSet(tools: [tools/0, tools/1], search: [search], code: [code])}</text>
+  <text class="note" x="172" y="72">4 actors in 3 shards ·</text>
+  <text class="note red" x="290" y="72">tools/1 never answers · the search server process has died</text>
+  <path class="arw" d="M350 82 V98"/><path class="arw" d="M756 82 V98"/>
+
+  <!-- row 1: read the entry -->
+  <text class="row" x="12" y="120">1 · read the</text>
+  <text class="row" x="12" y="135">    Gym entry</text>
+  <rect class="box" x="160" y="100" width="384" height="54" rx="6"/>
+  <text class="lbl" x="172" y="120">for name, handle in env_handles.items()</text>
+  <text class="lbl" x="172" y="136">handle = the NemoGymShardSet</text>
+  <a href="https://github.com/NVIDIA-NeMo/RL/blob/e4af41d82f5a99d2e8bd9b263a02f12576fea070/nemo_rl/algorithms/single_controller.py#L4523"><text x="430" y="136">base :4523</text></a>
+  <rect class="ok" x="562" y="100" width="384" height="54" rx="6"/>
+  <text class="lbl" x="574" y="120">as_nemo_gym_shard_set(env_handles["nemo_gym"])</text>
+  <text class="lbl" x="574" y="136">.all_handles → [tools/0, tools/1, search, code]</text>
+  <a href="https://github.com/NVIDIA-NeMo/RL/blob/4e57ebb9f57176a600a32535a3ce0348dda8c9db/nemo_rl/algorithms/single_controller.py#L4521-L4526"><text x="890" y="150">:4521</text></a>
+  <path class="arw" d="M350 154 V170"/><path class="arw" d="M756 154 V170"/>
+
+  <!-- row 2: ask -->
+  <text class="row" x="12" y="192">2 · ask</text>
+  <rect class="bad" x="160" y="172" width="384" height="70" rx="6"/>
+  <text class="lbl" x="172" y="192">getattr(shard set, "health_check", None)</text>
+  <text class="lbl red" x="172" y="208">→ None → continue</text>
+  <text class="lbl red" x="172" y="224">0 of 4 actors asked</text>
+  <a href="https://github.com/NVIDIA-NeMo/RL/blob/e4af41d82f5a99d2e8bd9b263a02f12576fea070/nemo_rl/algorithms/single_controller.py#L4524-L4526"><text x="430" y="224">base :4524</text></a>
+  <rect class="ok" x="562" y="172" width="384" height="70" rx="6"/>
+  <text class="lbl" x="574" y="192">4 × actor.health_check.remote(), all at once</text>
+  <text class="lbl" x="574" y="208">each waits at most 30.0 s on its own</text>
+  <a href="https://github.com/NVIDIA-NeMo/RL/blob/4e57ebb9f57176a600a32535a3ce0348dda8c9db/nemo_rl/algorithms/single_controller.py#L4575-L4577"><text x="574" y="228">gather :4575</text></a>
+  <a href="https://github.com/NVIDIA-NeMo/RL/blob/4e57ebb9f57176a600a32535a3ce0348dda8c9db/nemo_rl/algorithms/single_controller.py#L4553-L4555"><text x="670" y="228">wait_for :4553</text></a>
+  <path class="arw" d="M350 242 V258"/><path class="arw" d="M756 242 V258"/>
+
+  <!-- row 3: answers -->
+  <text class="row" x="12" y="280">3 · answers</text>
+  <rect class="bad" x="160" y="260" width="384" height="86" rx="6"/>
+  <text class="lbl" x="172" y="280">problems = []</text>
+  <text class="note" x="172" y="300">the same empty answer on every tick,</text>
+  <text class="note" x="172" y="316">whatever the Gym servers are doing</text>
+  <rect class="ok" x="562" y="260" width="384" height="86" rx="6"/>
+  <text class="lbl grn" x="574" y="280">tools/0 → ok           code → ok</text>
+  <text class="lbl red" x="574" y="298">tools/1 → no answer within 30.0 s</text>
+  <text class="lbl red" x="574" y="316">search  → Ray error; keep line 1 of the cause</text>
+  <a href="https://github.com/NVIDIA-NeMo/RL/blob/4e57ebb9f57176a600a32535a3ce0348dda8c9db/nemo_rl/algorithms/single_controller.py#L4556"><text x="574" y="336">timeout :4556</text></a>
+  <a href="https://github.com/NVIDIA-NeMo/RL/blob/4e57ebb9f57176a600a32535a3ce0348dda8c9db/nemo_rl/algorithms/single_controller.py#L4563-L4568"><text x="670" y="336">one line :4563</text></a>
+  <path class="arw" d="M350 346 V362"/><path class="arw" d="M756 346 V362"/>
+
+  <!-- row 4: what the run sees -->
+  <text class="row" x="12" y="384">4 · what the</text>
+  <text class="row" x="12" y="399">    run sees</text>
+  <rect class="bad" x="160" y="364" width="384" height="62" rx="6"/>
+  <text class="lbl" x="172" y="384">no warning</text>
+  <text class="note" x="172" y="402">at best "WARNING: rollout stall -- …", and only</text>
+  <text class="note" x="172" y="418">nothing commits for stall_timeout_s = 600 s</text>
+  <rect class="ok" x="562" y="364" width="384" height="62" rx="6"/>
+  <text class="lbl" x="574" y="384">2 problems, joined with "; "</text>
+  <text class="note" x="574" y="402">stall_action warn: printed on every tick</text>
+  <text class="note" x="574" y="418">stall_action abort: the run ends with RuntimeError</text>
+  <a href="https://github.com/NVIDIA-NeMo/RL/blob/4e57ebb9f57176a600a32535a3ce0348dda8c9db/nemo_rl/algorithms/single_controller.py#L4013-L4024"><text x="890" y="384">:4013</text></a>
+  <path class="arw" d="M756 426 V442"/>
+
+  <!-- row 5: the printed line -->
+  <rect class="ok" x="160" y="444" width="786" height="62" rx="6"/>
+  <text class="lbl" x="172" y="464">WARNING: environment health --</text>
+  <text class="lbl" x="172" y="480">  environment 'nemo_gym' instance 'tools/1' did not answer its health check within 30.0s;</text>
+  <text class="lbl" x="172" y="496">  environment 'nemo_gym' instance 'search' reported unhealthy: Process `search` finished unexpectedly!</text>
+</svg>
+<p class="sub">Rows 1–3 and the printed line come from running the head code on this exact set of four fake actors.
+That run used a 0.2 s limit so it would finish quickly; the figure shows the 30 s default. The real output is one line, wrapped here.</p>
+
+<h2>The fix</h2>
+
+<p class="where"><b>Where the fix lands: RL only,</b> in
+<a href="https://github.com/NVIDIA-NeMo/RL/blob/4e57ebb9f57176a600a32535a3ce0348dda8c9db/nemo_rl/algorithms/single_controller.py#L4506-L4578"><code>single_controller.py</code></a>,
+plus tests. <b>No Gym change:</b> each actor already has a
+<a href="https://github.com/NVIDIA-NeMo/RL/blob/4e57ebb9f57176a600a32535a3ce0348dda8c9db/nemo_rl/environments/nemo_gym.py#L1219-L1231"><code>health_check</code></a>
+that runs Gym's own server poll; the PR only calls it.</p>
+
+<pre class="diff"><span class="hunk">@@ single_controller.py base L4522-L4526 → head L4521-L4526 · _check_env_health</span>
+         """
+<span class="del">-        problems: list[str] = []
+-        for env_name, handle in self._env_handles.items():
+-            health_check = getattr(handle, "health_check", None)
+-            if health_check is None:
+-                continue
+</span><span class="add">+        nemo_gym = self._env_handles.get("nemo_gym")
++        if nemo_gym is None:
++            return []
++        return await self._check_shard_set_health(
++            "nemo_gym", as_nemo_gym_shard_set(nemo_gym), timeout_s
++        )
+</span>
+<span class="hunk">@@ single_controller.py head L4549-L4578 · new method _check_shard_set_health (body)</span>
+<span class="add">+        async def check_actor(actor: Any) -> str | None:
++            """Return the problem found on one actor, or None when it is healthy."""
++            label = shard_set.instance_label(actor)
++            try:
++                await asyncio.wait_for(
++                    self._ray_get(actor.health_check.remote()), timeout=timeout_s
++                )
++            except asyncio.TimeoutError:
++                return (
++                    f"environment {env_name!r} instance {label!r} did not answer its "
++                    f"health check within {timeout_s}s"
++                )
++            except Exception as error:
++                reason = str(error)
++                if isinstance(error, RayTaskError) and isinstance(
++                    error.cause, BaseException
++                ):
++                    # Ray's text is the remote traceback, and Gym's poll() error ends
++                    # with up to 64 KiB of the dead server's output. Keep one line.
++                    reason = str(error.cause).partition("\n")[0]
++                return (
++                    f"environment {env_name!r} instance {label!r} reported unhealthy: "
++                    f"{reason}"
++                )
++            return None
++
++        results = await asyncio.gather(
++            *(check_actor(actor) for actor in shard_set.all_handles)
++        )
++        return [problem for problem in results if problem is not None]</span></pre>
+<p class="sub" style="margin-top:-4px">The new method's docstring (head L4531-L4547) is left out of the second hunk.</p>
+
+<ol class="steps">
+<li><b>Read the entry the way the rollout code does.</b>
+<a href="https://github.com/NVIDIA-NeMo/RL/blob/4e57ebb9f57176a600a32535a3ce0348dda8c9db/nemo_rl/environments/nemo_gym.py#L3526-L3536"><code>as_nemo_gym_shard_set</code></a>
+turns a set or a single actor into a set. Other environments, such as math, have no subprocess servers and are not asked.</li>
+<li><b>Ask every actor, all at once.</b> One <code>gather</code> over
+<a href="https://github.com/NVIDIA-NeMo/RL/blob/4e57ebb9f57176a600a32535a3ce0348dda8c9db/nemo_rl/environments/nemo_gym.py#L3352-L3353"><code>all_handles</code></a>,
+with a separate time limit per call. A silent actor costs one tick at most and does not hide the others.</li>
+<li><b>Name the actor.</b>
+<a href="https://github.com/NVIDIA-NeMo/RL/blob/4e57ebb9f57176a600a32535a3ce0348dda8c9db/nemo_rl/environments/nemo_gym.py#L3438-L3450"><code>instance_label</code></a>
+gives the shard name, plus <code>/&lt;replica&gt;</code> when the shard has more than one replica. That is the same name the per-shard log directories use.</li>
+<li><b>Keep a dead server to one line.</b> Ray's error text holds the remote traceback, and Gym's error holds the server's last output.
+Only the first line of the original error is kept; the full output is in the Gym actor's log.</li>
+</ol>
+
+<h2>What it means for a run</h2>
+
+<div class="hl">
+<p style="margin:0 0 8px">Every single-controller run with NeMo-Gym now checks every Gym actor on every watchdog tick.
+That is one Ray call per actor every 30 s. A dead tool server is named within one tick instead of hiding behind failed
+rollouts or a 600 s stall.</p>
+<p style="margin:0">What happens next is still decided by <code>stall_action</code>. Under the default <code>warn</code>,
+the run prints the problem on every tick and keeps going. Under <code>abort</code>, it ends with
+<code>RuntimeError: environment health check failed -- …</code>. Setting
+<code>gym_subprocess_check: false</code> turns the check off.</p>
+</div>
+
+</div>
+</body>
+</html>
